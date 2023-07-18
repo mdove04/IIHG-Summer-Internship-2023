@@ -1,0 +1,193 @@
+---
+title: "Meningioma PCA and Heatmaps"
+output: html_document
+date: "2023-06-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r Read and wrangle, include = FALSE}
+library(tidyverse)
+library(readxl)
+data <- read_excel("Downloads/2023.04.27_Dougherty_Meningiomas_2023.01samplebatch.xlsx")
+tibble(data)
+
+tidy_data <- data %>%
+  select(-Original_Batch_Date, -DNA_Methylation, -Molecular_testing, -Freeze_time_seconds, -NF2, -dCMP, -dCDP, -Cytosine, -Creatinine, -Carnitine, -`Butyryl-CoA`, -Thymidine) %>%
+  filter(Sample_ID != "M48") %>%
+  filter(Sample_ID != "M61")
+```
+```{r Create matrix, include = FALSE}
+row_name = tidy_data$Sample_ID
+data_matrix <- tidy_data %>%
+  select(-WHO_grade) %>%
+  select(where(is.numeric)) %>%
+  data.matrix(rownames.force = NA)
+rownames(data_matrix) = row_name
+
+```
+```{r PCA, include = FALSE}
+pca <- prcomp(data_matrix, scale.=TRUE)
+```
+
+## Principal Component Analysis
+```{r PCA plots, echo = FALSE}
+pca.var <- pca$sdev^2
+pca.var.per <- round(pca.var/sum(pca.var)*100, 1)
+barplot(pca.var.per, main="Scree Plot", xlab="Principal Component", ylab="Percent Variation")
+
+library(ggplot2)
+ggplot(data = tidy_data , mapping = aes(x = pca$x[,1], y = pca$x[,2], color = Sample_Type)) + 
+  labs(y = "PC2", x = "PC1") +
+  geom_point() 
+
+ggplot(data = tidy_data, mapping = aes(x = pca$x[,1], y = pca$x[,3], color = Sample_Type)) +
+  labs(y= "PC3", x="PC1") +
+  geom_point()
+
+```
+
+
+## Top 10 Loading Scores for PC1
+```{r Loading scores top 10, echo=FALSE}
+library(ggfortify)
+
+loading_scores <- pca$rotation[,1]
+loading_scores <- abs(loading_scores)
+loading_scores <- sort(loading_scores, decreasing = TRUE)
+top_10_metabolites <- names(loading_scores[1:10])
+pca$rotation[top_10_metabolites,1]
+
+p0 <- autoplot(pca, data = tidy_data, color = 'Sample_Type', loadings = TRUE, , loadings.label = TRUE, loadings.label.size = 2, loadings.label.color = "black")
+p0$layers[[2]]$data<-p0$layers[[2]]$data[c("Glucose","GDP", "alpha-Ketoisocaproate (KIC)", "Pyridoxine (PN)", "Glutamate", "alpha-Keto-beta-Methylvalerate (KMV)", "NAD+", "alpha-Ketoisovalerate (KIV)", "3-Hydroxypropionate", "2-Hydroxybutyrate"),]
+p0$layers[[3]]$data<-p0$layers[[3]]$data[c("Glucose","GDP", "alpha-Ketoisocaproate (KIC)", "Pyridoxine (PN)", "Glutamate", "alpha-Keto-beta-Methylvalerate (KMV)", "NAD+", "alpha-Ketoisovalerate (KIV)", "3-Hydroxypropionate", "2-Hydroxybutyrate"),]
+p0
+```
+
+
+## Heatmap
+```{r Heatmap, echo=FALSE}
+long_data <- tidy_data %>%
+  select(-Sample_Type, -Tumor_Location, -WHO_grade) %>%
+  pivot_longer(names_to = "Metabolite", 
+               values_to = "Expression_Level", 
+               cols = -Sample_ID)
+ggplot(data=long_data, aes(x = Sample_ID, y = Metabolite, fill = Expression_Level)) +
+  geom_tile() + 
+  theme(axis.text = element_text(size = 2)) +
+  scale_fill_gradientn(colors = c("blue", "khaki", "red"))
+```
+
+
+## Clustered Heatmap
+```{r Clustered Heatmap, echo=FALSE}
+library(pheatmap)
+library(viridis)
+
+type_df = data.frame("type" =  tidy_data$Sample_Type, "location" = tidy_data$Tumor_Location, "grade" = tidy_data$WHO_grade)
+row.names(type_df) <- tidy_data$Sample_ID
+type_df
+
+quantile_breaks <- function(xs, n = 10) {
+  breaks <- quantile(xs, probs = seq(0, 1, length.out = n))
+  breaks[!duplicated(breaks)]
+}
+
+ann_colors = list(
+  type = c(`Primary meningioma` = "deepskyblue2", dura = "darkorchid1"),
+  location = c(`skull base` = "deeppink1", spine = "mediumaquamarine", convexity = "khaki1", `n/a` = "orange"),
+  grade = c(`1` = "coral", `2` = "forestgreen", `n/a` = "blue3")
+)
+
+mat_breaks <- quantile_breaks(t(data_matrix), n = 11)
+p <- pheatmap(t(data_matrix), breaks = mat_breaks, fontsize_row = 5, fontsize_col = 6, color = magma(length(mat_breaks)-1), annotation_col = type_df, annotation_colors = ann_colors)
+
+```
+
+```{r}
+
+tidy_data_2 <- tidy_data %>%
+  filter(Sample_ID %in% c("M95","M85","M83","M72","M64","M91","M46","M45","M77","M84","M49","M90","M50","M94","M74","M81","M78","M79","M53","M66","M92","M55","M88","M73","M59","M70","M75","M69","M86","M80","M56","M68","M65","M82","M89","M52","M60","M87","M58"))
+
+
+classification_annotation <- read.csv("/Users/makayladove/Downloads/meningioma_methylation_classification.csv")
+type_methylation_df = data.frame("Who_grade" = tidy_data_2$WHO_grade, "tumor_location" = tidy_data_2$Tumor_Location, "cluster" = classification_annotation$Cluster)
+row.names(type_methylation_df) <- classification_annotation$Sample.Label
+
+
+row_name = tidy_data_2$Sample_ID
+data_matrix_2 <- tidy_data_2  %>%
+  select(-WHO_grade) %>%
+  select(where(is.numeric)) %>%
+  data.matrix(rownames.force = NA)
+rownames(data_matrix_2) = row_name
+
+quantile_breaks_2 <- function(xs, n = 10) {
+  breaks <- quantile(xs, probs = seq(0, 1, length.out = n))
+  breaks[!duplicated(breaks)]
+}
+
+
+mat_breaks_2 <- quantile_breaks(t(data_matrix), n = 11)
+p_methylation <- pheatmap(t(data_matrix_2), breaks = mat_breaks_2, fontsize_row = 5, fontsize_col = 6, color = magma(length(mat_breaks_2)-1), annotation_col = type_methylation_df)
+
+```
+
+
+
+```{r}
+library(dendextend)
+
+glycine_serine <- c("Leucine", "O-Phosphoethanolamine", "Threonine", "Glycine", "Homocysteine", "Taurine", "Serine", "Glutamine", "Creatine", "Glycerol", "Lysine", "Cytidine", "O-Phosphoserine", "6-Phosphogluconate", "beta-Hydroxybutyrate (3-Hydroxybutyrate)")
+tryptophan <- c("Uracil", "Guanine", "Nicotinuric acid", "Tryptamine", "Tryptophan", "Glyceraldehyde 3-phosphate")
+choline <- c("Pantothenic acid", "Isoleucine", "Sphingosine")
+
+my_heatmap <- pheatmap(t(data_matrix), silent = TRUE)
+dend <- as.dendrogram(my_heatmap[[1]])
+labels_cex(dend) <- 0.4
+dend <- color_labels(dend, labels = glycine_serine, col = 4)
+#dend <- color_labels(dend, k = 25)
+#dend <- color_branches(dend, k = 25)
+plot(dend, horiz=TRUE,)
+```
+
+
+```{r t-SNE, echo=FALSE}
+library(Rtsne)
+
+tidy_data_tsne <- tidy_data %>%
+  mutate(ID=row_number())
+
+meta_data <- tidy_data_tsne %>%
+  select(ID, Sample_ID, Sample_Type, Tumor_Location)
+
+tSNE_fit <- tidy_data_tsne %>%
+  select(where(is.numeric)) %>%
+  column_to_rownames("ID") %>%
+  scale() %>%
+  Rtsne(perplexity = floor((nrow(tidy_data_tsne)-1)/3))
+
+
+tSNE_df <- tSNE_fit$Y %>%
+  as.data.frame() %>%
+  rename(tSNE1="V1", 
+         tSNE2="V2") %>%
+  mutate(ID=row_number())
+
+tSNE_df <- tSNE_df %>%
+  inner_join(meta_data, by="ID")
+
+tSNE_df %>% 
+  ggplot(aes(x=tSNE1, 
+             y=tSNE2,
+             color= Tumor_Location, 
+             shape= Sample_Type)) +
+  geom_point()
+
+```
+
+
+
