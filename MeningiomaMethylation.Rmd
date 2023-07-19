@@ -1,0 +1,154 @@
+---
+title: "DNA Methylation"
+output: html_document
+date: "2023-06-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r install SeSAMe, include = FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("sesame")
+
+library(sesame)
+sesame_checkVersion()
+sesameDataCache()
+tools::R_user_dir("ExperimentHub", which="cache")
+
+```
+
+
+
+```{r dataset to train model- small, include=FALSE}
+library(readr)
+library(tidyverse)
+
+#dataset <- read.csv("Downloads/GSE183647_meningioma_betas.csv")
+dataset <- readRDS("GSE183647_meningioma_betas.rds")
+
+small_dataset <- head(dataset, 10000) %>%
+  dplyr::select(-"X203219750100_R01C01", -"X203219750100_R03C01", -"X204081730051_R08C01", -"X204081730061_R01C01", -"X204081730061_R03C01", -"X203219750127_R03C01", -"X204081560154_R05C01", -"X204081560154_R08C01", -"X203219750225_R03C01", -"X203064760075_R08C01", -"X204365950077_R08C01", -"X203219760007_R03C01", -"X204365950096_R05C01", -"X203219760007_R06C01", -"X203064760113_R02C01", -"X204365950038_R01C01", -"X203219760058_R04C01", -"X203219670062_R02C01", -"X203219670062_R07C01", -"X204365950053_R08C01", -"X204365950124_R03C01", -"X204365950124_R04C01", -"X204365950124_R05C01", -"X204365950124_R07C01", -"X203219760154_R03C01", -"X204365950163_R04C01", -"X204365950163_R05C01", -"X204367410005_R08C01", -"X204367410064_R03C01", -"X204367410003_R04C01", -"X204367410164_R06C01", -"X204365940166_R01C01", -"X204365940166_R06C01", -"X203220070141_R05C01", -"X204365940166_R08C01", -"X203220070184_R02C01", -"X204365950031_R06C01", -"X204365950031_R07C01", -"X204365950033_R03C01", -"X204365950033_R06C01", -"X204365950033_R08C01", -"X204365950070_R04C01", -"X204365950092_R02C01", -"X204365950092_R04C01", -"X203060700010_R05C01", -"X203219750011_R02C01", -"X204367410032_R08C01", -"X203219750026_R07C01", -"X203219750085_R07C01", -"X204081730051_R06C01")
+
+small_dataset_2 <- small_dataset[,-1]
+rownames(small_dataset_2) <- small_dataset[,1]
+small_dataset_2 <- small_dataset_2 %>% drop_na()
+
+write.csv(small_dataset_2, "small_dataset.csv")
+
+```
+
+
+```{r dataset to train model- medium, include=FALSE}
+medium_dataset <- head(dataset, 20000) %>%  
+  dplyr::select(-"X203219750100_R01C01", -"X203219750100_R03C01", -"X204081730051_R08C01", -"X204081730061_R01C01", -"X204081730061_R03C01", -"X203219750127_R03C01", -"X204081560154_R05C01", -"X204081560154_R08C01", -"X203219750225_R03C01", -"X203064760075_R08C01", -"X204365950077_R08C01", -"X203219760007_R03C01", -"X204365950096_R05C01", -"X203219760007_R06C01", -"X203064760113_R02C01", -"X204365950038_R01C01", -"X203219760058_R04C01", -"X203219670062_R02C01", -"X203219670062_R07C01", -"X204365950053_R08C01", -"X204365950124_R03C01", -"X204365950124_R04C01", -"X204365950124_R05C01", -"X204365950124_R07C01", -"X203219760154_R03C01", -"X204365950163_R04C01", -"X204365950163_R05C01", -"X204367410005_R08C01", -"X204367410064_R03C01", -"X204367410003_R04C01", -"X204367410164_R06C01", -"X204365940166_R01C01", -"X204365940166_R06C01", -"X203220070141_R05C01", -"X204365940166_R08C01", -"X203220070184_R02C01", -"X204365950031_R06C01", -"X204365950031_R07C01", -"X204365950033_R03C01", -"X204365950033_R06C01", -"X204365950033_R08C01", -"X204365950070_R04C01", -"X204365950092_R02C01", -"X204365950092_R04C01", -"X203060700010_R05C01", -"X203219750011_R02C01", -"X204367410032_R08C01", -"X203219750026_R07C01", -"X203219750085_R07C01", -"X204081730051_R06C01")
+
+
+medium_dataset2 <- medium_dataset[,-1]
+rownames(medium_dataset2) <- medium_dataset[,1]
+medium_dataset2 <- medium_dataset2 %>% drop_na()
+
+write.csv(medium_dataset2, "medium_dataset.csv")
+```
+
+
+
+
+
+```{r classifications to train model, include=FALSE}
+library(tibble)
+library(tidyverse)
+
+text_set <- read.csv("/Users/makayladove/Documents/series_matrix.csv")
+text_set <- as_tibble(text_set) %>%
+  rename(tumor_number = Sample_description, array_index = Sample_description.1) %>%
+  filter(!(tumor_number == "QM100"| tumor_number == "QM103"| tumor_number == "QM104"| tumor_number == "QM107"| tumor_number == "QM112"| tumor_number == "QM124"| tumor_number == "QM141"| tumor_number == "QM146"| tumor_number == "QM147"| tumor_number == "QM16"| tumor_number == "QM160"| tumor_number == "QM164"| tumor_number == "QM170"| tumor_number == "QM177"| tumor_number == "QM19"| tumor_number == "QM202"| tumor_number == "QM205"| tumor_number == "QM214"| tumor_number == "QM226"| tumor_number == "QM240"| tumor_number == "QM250"| tumor_number == "QM251"| tumor_number == "QM253"| tumor_number == "QM255"| tumor_number == "QM256"| tumor_number == "QM264"| tumor_number == "QM266"| tumor_number == "QM301"| tumor_number == "QM306"| tumor_number == "QM31"| tumor_number == "QM335"| tumor_number == "QM338"| tumor_number == "QM347"| tumor_number == "QM348"| tumor_number == "QM356"| tumor_number == "QM369"| tumor_number == "QM371"| tumor_number == "QM373"| tumor_number == "QM380"| tumor_number == "QM385"| tumor_number == "QM388"| tumor_number == "QM392"| tumor_number == "QM401"| tumor_number == "QM403"| tumor_number == "QM49"| tumor_number == "QM62"| tumor_number == "QM74"| tumor_number == "QM86"| tumor_number == "QM96"| tumor_number == "QM99"))
+text_set$array_index <- paste0("X", text_set$array_index)
+
+
+classification <- read.csv("/Users/makayladove/Downloads/classifications.csv")
+classification <- as_tibble(classification)
+
+joined_subset <- text_set %>%
+  inner_join(classification, by = "tumor_number") %>%
+  select(-tumor_number) %>%
+  rename(x = array_index) %>%
+  arrange(x)
+
+
+write.csv(joined_subset, "subgroups.csv")
+
+```
+
+
+
+
+```{r model, include=FALSE}
+
+# function to construct and train support vector machine (SVM) classifier
+  
+  # necessary packages
+  library(caret)
+  library(e1071)
+  library(pROC)
+  
+  # read in beta values and classification assignments from discovery cohort
+  bVals = as.data.frame(t(read.csv("small_dataset.csv", row.names=1)))
+  clusters = read.csv("subgroups.csv", row.names=1)
+  mlDat = data.frame(clusters = as.character(clusters$x), bVals)
+  mlDat$clusters = as.factor(mlDat$clusters)
+  
+  # slice data into training (75%) and testing (25%) partitions
+  set.seed(1234)
+  intrain <- createDataPartition(y = mlDat$clusters, p= 0.75, list = FALSE)
+  training <- mlDat[intrain,]
+  testing <- mlDat[-intrain,]
+  
+  # train SVM model using training partition with 10-fold cross validation
+  trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 1)
+  svm_Linear <- caret::train(clusters ~., data = training, method = "svmLinear",
+                      trControl=trctrl,
+                      preProcess = c("center", "scale"),
+                      tuneLength = 10, 
+                      verbose = T, 
+                      num.threads = 6)
+  
+  # test SVM model using testing partition
+  test_pred <- predict(svm_Linear, newdata = testing)
+  confusionMatrix(test_pred, testing$clusters)
+  
+  # save SVM classifier
+  saveRDS(svm_Linear, file="svm_linear_classifier.rds")
+
+```
+
+
+
+```{r create beta value table, include=FALSE}
+idat_dir <- "/Users/makayladove/Downloads/IDAT FILES"
+
+pfx <- "/Users/makayladove/Downloads/IDAT FILES/207026940069_R04C01"
+
+
+searchIDATprefixes(idat_dir)
+sset <- readIDATpair("/Users/makayladove/Downloads/IDAT FILES/207026940069_R04C01")
+
+betas = do.call(cbind, BiocParallel::bplapply(
+    searchIDATprefixes(idat_dir), function(pfx) {
+        getBetas(prepSesame(readIDATpair(pfx), "QCDPB"))
+}, BPPARAM = BiocParallel::MulticoreParam(2)))
+betas
+
+
+betas <- openSesame(idat_dir, BPPARAM = BiocParallel::MulticoreParam(2))
+betas
+
+
+
+```
+
+
